@@ -122,7 +122,6 @@ struct SettingsTab: View {
                                 .foregroundStyle(.secondary)
                         }
 
-                        DisclosureGroup("Advanced") {
                         if self.appModel.gatewayServerName == nil {
                             LabeledContent("Discovery", value: self.gatewayController.discoveryStatusText)
                         }
@@ -167,78 +166,80 @@ struct SettingsTab: View {
                             self.gatewayList(showing: .all)
                         }
 
-                        Toggle("Use Manual Gateway", isOn: self.$manualGatewayEnabled)
+                        DisclosureGroup("Advanced") {
+                            Toggle("Use Manual Gateway", isOn: self.$manualGatewayEnabled)
 
-                        TextField("Host", text: self.$manualGatewayHost)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
+                            TextField("Host", text: self.$manualGatewayHost)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
 
-                        TextField("Port (optional)", text: self.manualPortBinding)
-                            .keyboardType(.numberPad)
+                            TextField("Port (optional)", text: self.manualPortBinding)
+                                .keyboardType(.numberPad)
 
-                        Toggle("Use TLS", isOn: self.$manualGatewayTLS)
+                            Toggle("Use TLS", isOn: self.$manualGatewayTLS)
 
-                        TextField("Discovery Domain (optional)", text: self.$discoveryDomain)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .onChange(of: self.discoveryDomain) { _, _ in
-                                self.scheduleDiscoveryRestart()
-                            }
-
-                        Text("For tailnet / unicast DNS-SD (example: openclaw.internal.).")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-
-                        Button {
-                            Task { await self.connectManual() }
-                        } label: {
-                            if self.connectingGatewayID == "manual" {
-                                HStack(spacing: 8) {
-                                    ProgressView()
-                                        .progressViewStyle(.circular)
-                                    Text("Connecting…")
+                            TextField("Discovery Domain (optional)", text: self.$discoveryDomain)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .onChange(of: self.discoveryDomain) { _, _ in
+                                    self.scheduleDiscoveryRestart()
                                 }
-                            } else {
-                                Text("Connect (Manual)")
-                            }
-                        }
-                        .disabled(self.connectingGatewayID != nil || self.manualGatewayHost
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
-                            .isEmpty || !self.manualPortIsValid)
 
-                        Text(
-                            "Use this when mDNS/Bonjour discovery is blocked. "
-                                + "Leave port empty for 443 on tailnet DNS (TLS) or 18789 otherwise.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-
-                        Toggle("Discovery Debug Logs", isOn: self.$discoveryDebugLogsEnabled)
-                            .onChange(of: self.discoveryDebugLogsEnabled) { _, newValue in
-                                self.gatewayController.setDiscoveryDebugLoggingEnabled(newValue)
-                            }
-
-                        NavigationLink("Discovery Logs") {
-                            GatewayDiscoveryDebugLogView()
-                        }
-
-                        Toggle("Debug Canvas Status", isOn: self.$canvasDebugStatusEnabled)
-
-                        TextField("Gateway Auth Token", text: self.$gatewayToken)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-
-                        SecureField("Gateway Password", text: self.$gatewayPassword)
-
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Debug")
-                                .font(.footnote.weight(.semibold))
+                            Text("For tailnet / unicast DNS-SD (example: openclaw.internal.).")
+                                .font(.footnote)
                                 .foregroundStyle(.secondary)
-                            Text(self.gatewayDebugText())
-                                .font(.system(size: 12, weight: .regular, design: .monospaced))
+
+                            Button {
+                                Task { await self.connectManual() }
+                            } label: {
+                                if self.connectingGatewayID == "manual" {
+                                    HStack(spacing: 8) {
+                                        ProgressView()
+                                            .progressViewStyle(.circular)
+                                        Text("Connecting…")
+                                    }
+                                } else {
+                                    Text("Connect (Manual)")
+                                }
+                            }
+                            .disabled(self.connectingGatewayID != nil || self.manualGatewayHost
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                                .isEmpty || !self.manualPortIsValid)
+
+                            Text(
+                                "Use this when mDNS/Bonjour discovery is blocked. "
+                                    + "Leave port empty for 443 on tailnet DNS (TLS) or 18789 otherwise.")
+                                .font(.footnote)
                                 .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(10)
-                                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                            Toggle("Discovery Debug Logs", isOn: self.$discoveryDebugLogsEnabled)
+                                .onChange(of: self.discoveryDebugLogsEnabled) { _, newValue in
+                                    self.gatewayController.setDiscoveryDebugLoggingEnabled(newValue)
+                                }
+
+                            NavigationLink("Discovery Logs") {
+                                GatewayDiscoveryDebugLogView()
+                            }
+
+                            Toggle("Debug Canvas Status", isOn: self.$canvasDebugStatusEnabled)
+
+                            TextField("Gateway Auth Token", text: self.$gatewayToken)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+
+                            SecureField("Gateway Password", text: self.$gatewayPassword)
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Debug")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                Text(self.gatewayDebugText())
+                                    .font(.system(size: 12, weight: .regular, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(10)
+                                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            }
                         }
                     }
                     } label: {
@@ -515,10 +516,11 @@ struct SettingsTab: View {
 
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(gateway.name)
+                            // Avoid localized-string formatting edge cases from Bonjour-advertised names.
+                            Text(verbatim: gateway.name)
                             let detailLines = self.gatewayDetailLines(gateway)
                             ForEach(detailLines, id: \.self) { line in
-                                Text(line)
+                                Text(verbatim: line)
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                             }
@@ -606,7 +608,10 @@ struct SettingsTab: View {
         GatewaySettingsStore.saveLastDiscoveredGatewayStableID(gateway.stableID)
         defer { self.connectingGatewayID = nil }
 
-        await self.gatewayController.connect(gateway)
+        let err = await self.gatewayController.connectWithDiagnostics(gateway)
+        if let err {
+            self.connectStatus.text = err
+        }
     }
 
     private func connectLastKnown() async {
