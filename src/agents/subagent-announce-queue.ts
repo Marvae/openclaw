@@ -15,6 +15,7 @@ import {
 
 export type AnnounceQueueItem = {
   prompt: string;
+  extraSystemPrompt?: string;
   summaryLine?: string;
   enqueuedAt: number;
   sessionKey: string;

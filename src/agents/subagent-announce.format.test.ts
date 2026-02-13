@@ -78,7 +78,7 @@ describe("subagent announce formatting", () => {
     };
   });
 
-  it("sends instructional message to main agent with status and findings", async () => {
+  it("sends clean message to main agent with findings in extraSystemPrompt", async () => {
     const { runSubagentAnnounceFlow } = await import("./subagent-announce.js");
     await runSubagentAnnounceFlow({
       childSessionKey: "agent:main:subagent:test",
@@ -95,16 +95,21 @@ describe("subagent announce formatting", () => {
 
     expect(agentSpy).toHaveBeenCalled();
     const call = agentSpy.mock.calls[0]?.[0] as {
-      params?: { message?: string; sessionKey?: string };
+      params?: { message?: string; extraSystemPrompt?: string; sessionKey?: string };
     };
     const msg = call?.params?.message as string;
+    const systemPrompt = call?.params?.extraSystemPrompt as string;
     expect(call?.params?.sessionKey).toBe("agent:main:main");
-    expect(msg).toContain("subagent task");
+    // User-visible message is clean – no internal details
+    expect(msg).toContain("do thing");
     expect(msg).toContain("failed");
-    expect(msg).toContain("boom");
-    expect(msg).toContain("Findings:");
-    expect(msg).toContain("raw subagent reply");
-    expect(msg).toContain("Stats:");
+    expect(msg).not.toContain("Findings:");
+    expect(msg).not.toContain("Stats:");
+    expect(msg).not.toContain("Summarize");
+    // Findings and instructions are in extraSystemPrompt (not visible to user)
+    expect(systemPrompt).toContain("Findings:");
+    expect(systemPrompt).toContain("raw subagent reply");
+    expect(systemPrompt).toContain("craft a natural response");
   });
 
   it("includes success status when outcome is ok", async () => {
@@ -160,7 +165,7 @@ describe("subagent announce formatting", () => {
     expect(didAnnounce).toBe(true);
     expect(embeddedRunMock.queueEmbeddedPiMessage).toHaveBeenCalledWith(
       "session-123",
-      expect.stringContaining("subagent task"),
+      expect.stringContaining("do thing"),
     );
     expect(agentSpy).not.toHaveBeenCalled();
   });
@@ -389,9 +394,12 @@ describe("subagent announce formatting", () => {
     });
 
     expect(embeddedRunMock.waitForEmbeddedPiRunEnd).toHaveBeenCalledWith("child-session-1", 1000);
-    const call = agentSpy.mock.calls[0]?.[0] as { params?: { message?: string } };
-    expect(call?.params?.message).toContain("Read #12 complete.");
-    expect(call?.params?.message).not.toContain("(no output)");
+    const call = agentSpy.mock.calls[0]?.[0] as {
+      params?: { message?: string; extraSystemPrompt?: string };
+    };
+    // Reply is now in extraSystemPrompt, not in the user-visible message
+    expect(call?.params?.extraSystemPrompt).toContain("Read #12 complete.");
+    expect(call?.params?.extraSystemPrompt).not.toContain("(no output)");
   });
 
   it("defers announce when child run is still active after wait timeout", async () => {

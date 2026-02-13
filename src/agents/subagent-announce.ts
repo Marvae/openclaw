@@ -122,6 +122,7 @@ async function sendAnnounce(item: AnnounceQueueItem) {
     params: {
       sessionKey: item.sessionKey,
       message: item.prompt,
+      extraSystemPrompt: item.extraSystemPrompt,
       channel: origin?.channel,
       accountId: origin?.accountId,
       to: origin?.to,
@@ -169,6 +170,7 @@ function loadRequesterSessionEntry(requesterSessionKey: string) {
 async function maybeQueueSubagentAnnounce(params: {
   requesterSessionKey: string;
   triggerMessage: string;
+  extraSystemPrompt?: string;
   summaryLine?: string;
   requesterOrigin?: DeliveryContext;
 }): Promise<"steered" | "queued" | "none"> {
@@ -188,6 +190,7 @@ async function maybeQueueSubagentAnnounce(params: {
 
   const shouldSteer = queueSettings.mode === "steer" || queueSettings.mode === "steer-backlog";
   if (shouldSteer) {
+    // steer path only supports plain text; send the clean trigger message
     const steered = queueEmbeddedPiMessage(sessionId, params.triggerMessage);
     if (steered) {
       return "steered";
@@ -205,6 +208,7 @@ async function maybeQueueSubagentAnnounce(params: {
       key: canonicalKey,
       item: {
         prompt: params.triggerMessage,
+        extraSystemPrompt: params.extraSystemPrompt,
         summaryLine: params.summaryLine,
         enqueuedAt: Date.now(),
         sessionKey: canonicalKey,
@@ -475,12 +479,13 @@ export async function runSubagentAnnounceFlow(params: {
       outcome = { status: "unknown" };
     }
 
-    // Build stats
+    // Build stats (internal logging only – never sent to user)
     const statsLine = await buildSubagentStatsLine({
       sessionKey: params.childSessionKey,
       startedAt: params.startedAt,
       endedAt: params.endedAt,
     });
+    defaultRuntime.info?.(`subagent announce stats [${params.childSessionKey}]: ${statsLine}`);
 
     // Build status label
     const statusLabel =
@@ -492,25 +497,26 @@ export async function runSubagentAnnounceFlow(params: {
             ? `failed: ${outcome.error || "unknown error"}`
             : "finished with unknown status";
 
-    // Build instructional message for main agent
+    // Build a clean, user-visible message (no internal details)
     const announceType = params.announceType ?? "subagent task";
     const taskLabel = params.label || params.task || "task";
-    const triggerMessage = [
-      `A ${announceType} "${taskLabel}" just ${statusLabel}.`,
+    const triggerMessage = `The background task "${taskLabel}" has ${statusLabel}.`;
+
+    // Internal context for the agent (not visible to the user)
+    const announceSystemPrompt = [
+      "The user will see the message above. Use the findings below to craft a natural response.",
+      "Keep it brief (1-2 sentences). Flow it into the conversation naturally.",
+      `Do not mention technical details like tokens, stats, or that this was a ${announceType}.`,
+      "You can respond with NO_REPLY if no announcement is needed (e.g., internal task with no user-facing result).",
       "",
       "Findings:",
       reply || "(no output)",
-      "",
-      statsLine,
-      "",
-      "Summarize this naturally for the user. Keep it brief (1-2 sentences). Flow it into the conversation naturally.",
-      `Do not mention technical details like tokens, stats, or that this was a ${announceType}.`,
-      "You can respond with NO_REPLY if no announcement is needed (e.g., internal task with no user-facing result).",
     ].join("\n");
 
     const queued = await maybeQueueSubagentAnnounce({
       requesterSessionKey: params.requesterSessionKey,
       triggerMessage,
+      extraSystemPrompt: announceSystemPrompt,
       summaryLine: taskLabel,
       requesterOrigin,
     });
@@ -534,6 +540,7 @@ export async function runSubagentAnnounceFlow(params: {
       params: {
         sessionKey: params.requesterSessionKey,
         message: triggerMessage,
+        extraSystemPrompt: announceSystemPrompt,
         deliver: true,
         channel: directOrigin?.channel,
         accountId: directOrigin?.accountId,
