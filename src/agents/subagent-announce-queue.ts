@@ -151,7 +151,11 @@ function scheduleAnnounceDrain(key: string) {
             break;
           }
           // Keep the original extraSystemPrompt when overriding the prompt with a summary
-          await queue.send({ ...next, prompt: summaryPrompt, extraSystemPrompt: next.extraSystemPrompt });
+          await queue.send({
+            ...next,
+            prompt: summaryPrompt,
+            extraSystemPrompt: next.extraSystemPrompt,
+          });
           continue;
         }
 
