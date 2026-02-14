@@ -241,11 +241,15 @@ async function resolveCliProgramArguments(params: {
 
 export async function resolveGatewayProgramArguments(params: {
   port: number;
+  bind?: "loopback" | "lan" | "auto" | "custom" | "tailnet";
   dev?: boolean;
   runtime?: GatewayRuntimePreference;
   nodePath?: string;
 }): Promise<GatewayProgramArgs> {
   const gatewayArgs = ["gateway", "--port", String(params.port)];
+  if (params.bind && params.bind !== "loopback") {
+    gatewayArgs.push("--bind", params.bind);
+  }
   return resolveCliProgramArguments({
     args: gatewayArgs,
     dev: params.dev,
