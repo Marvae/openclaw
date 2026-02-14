@@ -1,6 +1,6 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import os from "node:os";
-import { approveDevicePairing, listDevicePairing } from "openclaw/plugin-sdk";
+import { approveDevicePairing, listDevicePairing, renderQrPngBase64 } from "openclaw/plugin-sdk";
 
 const DEFAULT_GATEWAY_PORT = 18789;
 
@@ -128,8 +128,7 @@ function pickLanIPv4(): string | null {
     }
     for (const entry of entries) {
       const family = entry?.family;
-      // Check for IPv4 (string "IPv4" on Node 18+, number 4 on older)
-      const isIpv4 = family === "IPv4" || String(family) === "4";
+      const isIpv4 = family === "IPv4" || family === 4;
       if (!entry || entry.internal || !isIpv4) {
         continue;
       }
@@ -153,8 +152,7 @@ function pickTailnetIPv4(): string | null {
     }
     for (const entry of entries) {
       const family = entry?.family;
-      // Check for IPv4 (string "IPv4" on Node 18+, number 4 on older)
-      const isIpv4 = family === "IPv4" || String(family) === "4";
+      const isIpv4 = family === "IPv4" || family === 4;
       if (!entry || entry.internal || !isIpv4) {
         continue;
       }
@@ -450,6 +448,24 @@ export default function register(api: OpenClawPluginApi) {
         token: auth.token,
         password: auth.password,
       };
+
+      if (action === "qr") {
+        const setupCode = encodeSetupCode(payload);
+        const qrBase64 = await renderQrPngBase64(setupCode);
+        const authLabel = auth.label ?? "auth";
+        return {
+          text: [
+            "Scan this QR code with the OpenClaw iOS app:",
+            "",
+            `![Pairing QR](data:image/png;base64,${qrBase64})`,
+            "",
+            `Gateway: ${payload.url}`,
+            `Auth: ${authLabel}`,
+            "",
+            "After scanning, run /pair approve to complete pairing.",
+          ].join("\n"),
+        };
+      }
 
       const channel = ctx.channel;
       const target = ctx.senderId?.trim() || ctx.from?.trim() || ctx.to?.trim() || "";
