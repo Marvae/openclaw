@@ -33,7 +33,6 @@ struct SettingsTab: View {
     @AppStorage("gateway.discovery.debugLogs") private var discoveryDebugLogsEnabled: Bool = false
     @AppStorage("canvas.debugStatusEnabled") private var canvasDebugStatusEnabled: Bool = false
     @AppStorage("onboarding.requestID") private var onboardingRequestID: Int = 0
-    @State private var connectStatus = ConnectStatusStore()
     @State private var connectingGatewayID: String?
     @State private var localIPAddress: String?
     @State private var lastLocationModeRaw: String = OpenClawLocationMode.off.rawValue
@@ -241,7 +240,6 @@ struct SettingsTab: View {
                                     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                             }
                         }
-                    }
                     } label: {
                         HStack(spacing: 10) {
                             Circle()
@@ -610,7 +608,7 @@ struct SettingsTab: View {
 
         let err = await self.gatewayController.connectWithDiagnostics(gateway)
         if let err {
-            self.connectStatus.text = err
+            self.setupStatusText = err
         }
     }
 
@@ -1113,7 +1111,7 @@ struct SettingsTab: View {
             GatewaySettingsStore.saveGatewayPassword(trimmedPassword, instanceId: freshInstanceId)
         }
 
-        self.connectStatus.text = "Onboarding reset"
+        self.setupStatusText = "Onboarding reset"
         self.gatewayController.restartDiscovery()
 
         let defaults = UserDefaults.standard
@@ -1146,7 +1144,7 @@ struct SettingsTab: View {
             return
         }
 
-        self.connectStatus.text = "Reconnecting to \(host)…"
+        self.setupStatusText = "Reconnecting to \(host)…"
         self.connectingGatewayID = "reset"
         Task {
             await self.gatewayController.connectManual(host: host, port: port, useTLS: tls)
