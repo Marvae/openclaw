@@ -399,6 +399,21 @@ private final class ScreenNavigationDelegate: NSObject, WKNavigationDelegate {
     }
 
     func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationResponse: WKNavigationResponse,
+        decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void)
+    {
+        if let http = navigationResponse.response as? HTTPURLResponse,
+           http.statusCode >= 400
+        {
+            decisionHandler(.cancel)
+            self.controller?.showDefaultCanvas()
+            return
+        }
+        decisionHandler(.allow)
+    }
+
+    func webView(
         _: WKWebView,
         didFailProvisionalNavigation _: WKNavigation?,
         withError error: any Error)
