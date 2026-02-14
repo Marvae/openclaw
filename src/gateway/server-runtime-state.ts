@@ -144,6 +144,9 @@ export async function createGatewayRuntimeState(params: {
       resolvedAuth: params.resolvedAuth,
       rateLimiter: params.rateLimiter,
       tlsOptions: params.gatewayTls?.enabled ? params.gatewayTls.tlsOptions : undefined,
+      bindHost: params.bindHost,
+      port: params.port,
+      gatewayTls: params.gatewayTls?.enabled ? { enabled: true } : undefined,
     });
     try {
       await listenGatewayHttpServer({
