@@ -1,6 +1,15 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import os from "node:os";
-import { approveDevicePairing, listDevicePairing } from "openclaw/plugin-sdk";
+import { approveDevicePairing, listDevicePairing, renderQrPngBase64 } from "openclaw/plugin-sdk";
+import qrcode from "qrcode-terminal";
+
+function renderQrAscii(data: string): Promise<string> {
+  return new Promise((resolve) => {
+    qrcode.generate(data, { small: true }, (output: string) => {
+      resolve(output);
+    });
+  });
+}
 
 const DEFAULT_GATEWAY_PORT = 18789;
 
@@ -128,8 +137,7 @@ function pickLanIPv4(): string | null {
     }
     for (const entry of entries) {
       const family = entry?.family;
-      // Check for IPv4 (string "IPv4" on Node 18+, number 4 on older)
-      const isIpv4 = family === "IPv4" || String(family) === "4";
+      const isIpv4 = family === "IPv4" || family === 4;
       if (!entry || entry.internal || !isIpv4) {
         continue;
       }
@@ -153,8 +161,7 @@ function pickTailnetIPv4(): string | null {
     }
     for (const entry of entries) {
       const family = entry?.family;
-      // Check for IPv4 (string "IPv4" on Node 18+, number 4 on older)
-      const isIpv4 = family === "IPv4" || String(family) === "4";
+      const isIpv4 = family === "IPv4" || family === 4;
       if (!entry || entry.internal || !isIpv4) {
         continue;
       }
@@ -450,6 +457,84 @@ export default function register(api: OpenClawPluginApi) {
         token: auth.token,
         password: auth.password,
       };
+
+      if (action === "qr") {
+        const setupCode = encodeSetupCode(payload);
+        const [qrBase64, qrAscii] = await Promise.all([
+          renderQrPngBase64(setupCode),
+          renderQrAscii(setupCode),
+        ]);
+        const authLabel = auth.label ?? "auth";
+        const dataUrl = `data:image/png;base64,${qrBase64}`;
+
+        const channel = ctx.channel;
+        const target = ctx.senderId?.trim() || ctx.from?.trim() || ctx.to?.trim() || "";
+
+        if (channel === "telegram" && target) {
+          try {
+            const send = api.runtime?.channel?.telegram?.sendMessageTelegram;
+            if (send) {
+              await send(target, "Scan this QR code with the OpenClaw iOS app:", {
+                ...(ctx.messageThreadId != null ? { messageThreadId: ctx.messageThreadId } : {}),
+                ...(ctx.accountId ? { accountId: ctx.accountId } : {}),
+                mediaUrl: dataUrl,
+              });
+              return {
+                text: [
+                  `Gateway: ${payload.url}`,
+                  `Auth: ${authLabel}`,
+                  "",
+                  "After scanning, come back here and run `/pair approve` to complete pairing.",
+                ].join("\n"),
+              };
+            }
+          } catch (err) {
+            api.logger.warn?.(
+              `device-pair: telegram QR send failed, falling back (${String(
+                (err as Error)?.message ?? err,
+              )})`,
+            );
+          }
+        }
+
+        // Render based on channel capability
+        api.logger.info?.(`device-pair: QR fallback channel=${channel} target=${target}`);
+        const infoLines = [
+          `Gateway: ${payload.url}`,
+          `Auth: ${authLabel}`,
+          "",
+          "After scanning, run `/pair approve` to complete pairing.",
+        ];
+
+        // TUI (gateway-client) needs ASCII, WebUI can render markdown images
+        const isTui = target === "gateway-client" || channel !== "webchat";
+
+        if (!isTui) {
+          // WebUI: markdown image only
+          return {
+            text: [
+              "Scan this QR code with the OpenClaw iOS app:",
+              "",
+              `![Pairing QR](${dataUrl})`,
+              "",
+              ...infoLines,
+            ].join("\n"),
+          };
+        }
+
+        // CLI/TUI: ASCII QR only
+        return {
+          text: [
+            "Scan this QR code with the OpenClaw iOS app:",
+            "",
+            "```",
+            qrAscii,
+            "```",
+            "",
+            ...infoLines,
+          ].join("\n"),
+        };
+      }
 
       const channel = ctx.channel;
       const target = ctx.senderId?.trim() || ctx.from?.trim() || ctx.to?.trim() || "";
