@@ -620,6 +620,8 @@ final class NodeAppModel {
         switch route {
         case let .agent(link):
             await self.handleAgentDeepLink(link, originalURL: url)
+        case .gateway:
+            break
         }
     }
 

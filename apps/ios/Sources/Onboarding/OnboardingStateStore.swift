@@ -28,9 +28,11 @@ enum OnboardingStateStore {
         return appModel.gatewayServerName == nil
     }
 
-    static func markCompleted(mode: OnboardingConnectionMode, defaults: UserDefaults = .standard) {
+    static func markCompleted(mode: OnboardingConnectionMode? = nil, defaults: UserDefaults = .standard) {
         defaults.set(true, forKey: Self.completedDefaultsKey)
-        defaults.set(mode.rawValue, forKey: Self.lastModeDefaultsKey)
+        if let mode {
+            defaults.set(mode.rawValue, forKey: Self.lastModeDefaultsKey)
+        }
         defaults.set(Int(Date().timeIntervalSince1970), forKey: Self.lastSuccessTimeDefaultsKey)
     }
 

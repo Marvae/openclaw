@@ -1,4 +1,6 @@
+import CoreImage
 import OpenClawKit
+import PhotosUI
 import SwiftUI
 import UIKit
 
@@ -9,19 +11,33 @@ private enum OnboardingStep: Int, CaseIterable {
     case auth
     case success
 
-    var progressTitle: String {
+    var previous: Self? {
+        Self(rawValue: self.rawValue - 1)
+    }
+
+    var next: Self? {
+        Self(rawValue: self.rawValue + 1)
+    }
+
+    /// Progress label for the manual setup flow (mode → connect → auth → success).
+    var manualProgressTitle: String {
+        let manualSteps: [OnboardingStep] = [.mode, .connect, .auth, .success]
+        guard let idx = manualSteps.firstIndex(of: self) else { return "" }
+        return "Step \(idx + 1) of \(manualSteps.count)"
+    }
+
+    var title: String {
         switch self {
-        case .welcome:
-            "Step 1 of 5"
-        case .mode:
-            "Step 2 of 5"
-        case .connect:
-            "Step 3 of 5"
-        case .auth:
-            "Step 4 of 5"
-        case .success:
-            "Step 5 of 5"
+        case .welcome: "Welcome"
+        case .mode: "Connection Mode"
+        case .connect: "Connect"
+        case .auth: "Authentication"
+        case .success: "Connected"
         }
+    }
+
+    var canGoBack: Bool {
+        self != .welcome && self != .success
     }
 }
 
@@ -43,40 +59,137 @@ struct OnboardingWizardView: View {
     @State private var issue: GatewayConnectionIssue = .none
     @State private var didMarkCompleted = false
     @State private var discoveryRestartTask: Task<Void, Never>?
+    @State private var showQRScanner: Bool = false
+    @State private var scannerError: String?
+    @State private var selectedPhoto: PhotosPickerItem?
 
     let allowSkip: Bool
     let onClose: () -> Void
 
+    private var isFullScreenStep: Bool {
+        self.step == .welcome || self.step == .success
+    }
+
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    Text(self.step.progressTitle)
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-
+            Group {
                 switch self.step {
                 case .welcome:
                     self.welcomeStep
-                case .mode:
-                    self.modeStep
-                case .connect:
-                    self.connectStep
-                case .auth:
-                    self.authStep
                 case .success:
                     self.successStep
+                default:
+                    Form {
+                        switch self.step {
+                        case .mode:
+                            self.modeStep
+                        case .connect:
+                            self.connectStep
+                        case .auth:
+                            self.authStep
+                        default:
+                            EmptyView()
+                        }
+                    }
+                    .scrollDismissesKeyboard(.interactively)
                 }
             }
-            .navigationTitle("OpenClaw Setup")
+            .navigationTitle(self.isFullScreenStep ? "" : self.step.title)
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                if !self.isFullScreenStep {
+                    ToolbarItem(placement: .principal) {
+                        VStack(spacing: 2) {
+                            Text(self.step.title)
+                                .font(.headline)
+                            Text(self.step.manualProgressTitle)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
                 ToolbarItem(placement: .topBarLeading) {
-                    if self.allowSkip {
+                    if self.step.canGoBack {
+                        Button {
+                            self.navigateBack()
+                        } label: {
+                            Label("Back", systemImage: "chevron.left")
+                        }
+                    } else if self.allowSkip {
                         Button("Close") {
                             self.onClose()
                         }
                     }
+                }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        UIApplication.shared.sendAction(
+                            #selector(UIResponder.resignFirstResponder),
+                            to: nil, from: nil, for: nil)
+                    }
+                }
+            }
+        }
+        .alert("QR Scanner Unavailable", isPresented: Binding(
+            get: { self.scannerError != nil },
+            set: { if !$0 { self.scannerError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(self.scannerError ?? "")
+        }
+        .sheet(isPresented: self.$showQRScanner) {
+            NavigationStack {
+                QRScannerView(
+                    onGatewayLink: { link in
+                        self.handleScannedLink(link)
+                    },
+                    onError: { error in
+                        self.showQRScanner = false
+                        self.scannerError = error
+                    },
+                    onDismiss: {
+                        self.showQRScanner = false
+                    })
+                    .ignoresSafeArea()
+                    .navigationTitle("Scan QR Code")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Cancel") { self.showQRScanner = false }
+                        }
+                        ToolbarItem(placement: .topBarTrailing) {
+                            PhotosPicker(selection: self.$selectedPhoto, matching: .images) {
+                                Label("Photos", systemImage: "photo")
+                            }
+                        }
+                    }
+            }
+            .onChange(of: self.selectedPhoto) { _, newValue in
+                guard let item = newValue else { return }
+                self.selectedPhoto = nil
+                Task {
+                    guard let data = try? await item.loadTransferable(type: Data.self) else {
+                        self.showQRScanner = false
+                        self.scannerError = "Could not load the selected image."
+                        return
+                    }
+                    if let message = self.detectQRCode(from: data) {
+                        if let link = GatewayConnectDeepLink.fromSetupCode(message) {
+                            self.handleScannedLink(link)
+                            return
+                        }
+                        if let url = URL(string: message),
+                           let route = DeepLinkParser.parse(url),
+                           case let .gateway(link) = route
+                        {
+                            self.handleScannedLink(link)
+                            return
+                        }
+                    }
+                    self.showQRScanner = false
+                    self.scannerError = "No valid QR code found in the selected image."
                 }
             }
         }
@@ -116,15 +229,49 @@ struct OnboardingWizardView: View {
         }
     }
 
+    @ViewBuilder
     private var welcomeStep: some View {
-        Section("Welcome") {
-            Text("Connect this iOS node to your OpenClaw gateway.")
-            Text("Pick your connection mode, connect, then approve pairing if prompted.")
-                .font(.footnote)
+        VStack(spacing: 0) {
+            Spacer()
+
+            Image(systemName: "qrcode.viewfinder")
+                .font(.system(size: 64))
+                .foregroundStyle(.tint)
+                .padding(.bottom, 20)
+
+            Text("Welcome")
+                .font(.largeTitle.weight(.bold))
+                .padding(.bottom, 8)
+
+            Text("Connect to your OpenClaw gateway")
+                .font(.subheadline)
                 .foregroundStyle(.secondary)
-            Button("Continue") {
-                self.step = .mode
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+
+            Spacer()
+
+            VStack(spacing: 12) {
+                Button {
+                    self.showQRScanner = true
+                } label: {
+                    Label("Scan QR Code", systemImage: "qrcode")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+
+                Button {
+                    self.step = .mode
+                } label: {
+                    Text("Set Up Manually")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
             }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 48)
         }
     }
 
@@ -180,11 +327,16 @@ struct OnboardingWizardView: View {
     @ViewBuilder
     private var connectStep: some View {
         if let selectedMode {
-            Section("Connect") {
-                Text(selectedMode.title)
-                    .font(.headline)
+            Section {
+                LabeledContent("Mode", value: selectedMode.title)
                 LabeledContent("Discovery", value: self.gatewayController.discoveryStatusText)
                 LabeledContent("Status", value: self.appModel.gatewayStatusText)
+            } header: {
+                Text("Status")
+            } footer: {
+                if let connectMessage {
+                    Text(connectMessage)
+                }
             }
 
             switch selectedMode {
@@ -201,14 +353,6 @@ struct OnboardingWizardView: View {
                 Button("Back to Mode Selection") {
                     self.step = .mode
                 }
-            }
-        }
-
-        if let connectMessage {
-            Section {
-                Text(connectMessage)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -261,48 +405,36 @@ struct OnboardingWizardView: View {
     }
 
     private var remoteDomainConnectSection: some View {
-        Group {
-            self.manualConnectionFieldsSection(title: "Domain Settings")
-
-            Section("TLS") {
-                Text("TLS stays enabled by default for internet-facing gateways.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
+        self.manualConnectionFieldsSection(title: "Domain Settings")
     }
 
     private var developerConnectSection: some View {
-        Group {
-            Section("Developer Local") {
-                TextField("Host", text: self.$manualHost)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                TextField("Port", value: self.$manualPort, format: .number)
-                    .keyboardType(.numberPad)
-                Toggle("Use TLS", isOn: self.$manualTLS)
+        Section {
+            TextField("Host", text: self.$manualHost)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            TextField("Port", value: self.$manualPort, format: .number)
+                .keyboardType(.numberPad)
+            Toggle("Use TLS", isOn: self.$manualTLS)
 
-                Button {
-                    Task { await self.connectManual() }
-                } label: {
-                    if self.connectingGatewayID == "manual" {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                                .progressViewStyle(.circular)
-                            Text("Connecting…")
-                        }
-                    } else {
-                        Text("Connect")
+            Button {
+                Task { await self.connectManual() }
+            } label: {
+                if self.connectingGatewayID == "manual" {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                        Text("Connecting…")
                     }
+                } else {
+                    Text("Connect")
                 }
-                .disabled(!self.canConnectManual || self.connectingGatewayID != nil)
             }
-
-            Section {
-                Text("Default host is localhost. Use your Mac LAN IP if simulator networking requires it.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
+            .disabled(!self.canConnectManual || self.connectingGatewayID != nil)
+        } header: {
+            Text("Developer Local")
+        } footer: {
+            Text("Default host is localhost. Use your Mac LAN IP if simulator networking requires it.")
         }
     }
 
@@ -320,10 +452,7 @@ struct OnboardingWizardView: View {
             }
 
             if self.issue.needsPairing {
-                Section("Pairing Approval") {
-                    Text("On gateway host run:")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                Section {
                     Button("Copy: openclaw devices list") {
                         UIPasteboard.general.string = "openclaw devices list"
                     }
@@ -337,6 +466,10 @@ struct OnboardingWizardView: View {
                             UIPasteboard.general.string = "openclaw devices approve <requestId>"
                         }
                     }
+                } header: {
+                    Text("Pairing Approval")
+                } footer: {
+                    Text("Run these commands on your gateway host to approve this device.")
                 }
             }
 
@@ -357,17 +490,42 @@ struct OnboardingWizardView: View {
     }
 
     private var successStep: some View {
-        Section("Connected") {
+        VStack(spacing: 0) {
+            Spacer()
+
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 64))
+                .foregroundStyle(.green)
+                .padding(.bottom, 20)
+
+            Text("Connected")
+                .font(.largeTitle.weight(.bold))
+                .padding(.bottom, 8)
+
             let server = self.appModel.gatewayServerName ?? "gateway"
-            Text("Connected to \(server).")
+            Text(server)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 4)
+
             if let addr = self.appModel.gatewayRemoteAddress {
                 Text(addr)
-                    .font(.footnote)
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
-            Button("Open OpenClaw") {
+
+            Spacer()
+
+            Button {
                 self.onClose()
+            } label: {
+                Text("Open OpenClaw")
+                    .frame(maxWidth: .infinity)
             }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 48)
         }
     }
 
@@ -401,6 +559,45 @@ struct OnboardingWizardView: View {
         }
     }
 
+    private func handleScannedLink(_ link: GatewayConnectDeepLink) {
+        self.manualHost = link.host
+        self.manualPort = link.port
+        self.manualTLS = link.tls
+        if let token = link.token {
+            self.gatewayToken = token
+        }
+        if let password = link.password {
+            self.gatewayPassword = password
+        }
+        self.showQRScanner = false
+        self.connectMessage = "Connecting via QR code…"
+        self.step = .connect
+        if self.selectedMode == nil {
+            self.selectedMode = link.tls ? .remoteDomain : .homeNetwork
+        }
+        Task { await self.connectManual() }
+    }
+
+    private func detectQRCode(from data: Data) -> String? {
+        guard let ciImage = CIImage(data: data) else { return nil }
+        let detector = CIDetector(
+            ofType: CIDetectorTypeQRCode, context: nil,
+            options: [CIDetectorAccuracy: CIDetectorAccuracyHigh])
+        let features = detector?.features(in: ciImage) ?? []
+        for feature in features {
+            if let qr = feature as? CIQRCodeFeature, let message = qr.messageString {
+                return message
+            }
+        }
+        return nil
+    }
+
+    private func navigateBack() {
+        guard let target = self.step.previous else { return }
+        self.connectingGatewayID = nil
+        self.connectMessage = nil
+        self.step = target
+    }
     private var canConnectManual: Bool {
         let host = self.manualHost.trimmingCharacters(in: .whitespacesAndNewlines)
         return !host.isEmpty && self.manualPort > 0 && self.manualPort <= 65535
