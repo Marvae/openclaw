@@ -26,8 +26,10 @@ struct SettingsTab: View {
     @AppStorage("gateway.manual.host") private var manualGatewayHost: String = ""
     @AppStorage("gateway.manual.port") private var manualGatewayPort: Int = 18789
     @AppStorage("gateway.manual.tls") private var manualGatewayTLS: Bool = true
+    @AppStorage("gateway.discovery.domain") private var discoveryDomain: String = ""
     @AppStorage("gateway.discovery.debugLogs") private var discoveryDebugLogsEnabled: Bool = false
     @AppStorage("canvas.debugStatusEnabled") private var canvasDebugStatusEnabled: Bool = false
+    @AppStorage("onboarding.requestID") private var onboardingRequestID: Int = 0
     @State private var connectingGatewayID: String?
     @State private var localIPAddress: String?
     @State private var lastLocationModeRaw: String = OpenClawLocationMode.off.rawValue
@@ -38,8 +40,18 @@ struct SettingsTab: View {
     @State private var manualGatewayPortText: String = ""
     @State private var gatewayExpanded: Bool = true
     @State private var selectedAgentPickerId: String = ""
+    @State private var resetOnboardingConfirmPresented: Bool = false
+    @State private var discoveryRestartTask: Task<Void, Never>?
 
     private let gatewayLogger = Logger(subsystem: "ai.openclaw.ios", category: "GatewaySettings")
+
+    private var gatewayIssue: GatewayConnectionIssue {
+        GatewayConnectionIssue.detect(from: self.appModel.gatewayStatusText)
+    }
+
+    private var gatewayPairingRequired: Bool { self.gatewayIssue.needsPairing }
+
+    private var gatewayPairingRequestId: String? { self.gatewayIssue.requestId }
 
     var body: some View {
         NavigationStack {
@@ -103,6 +115,40 @@ struct SettingsTab: View {
                                 .foregroundStyle(.secondary)
                         }
 
+                        if self.gatewayPairingRequired {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Device pairing required")
+                                    .font(.headline)
+
+                                Text("On gateway host:")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+
+                                Button("Copy: openclaw devices list") {
+                                    UIPasteboard.general.string = "openclaw devices list"
+                                }
+
+                                if let id = self.gatewayPairingRequestId {
+                                    Button("Copy: openclaw devices approve \(id)") {
+                                        UIPasteboard.general.string = "openclaw devices approve \(id)"
+                                    }
+                                } else {
+                                    Button("Copy: openclaw devices approve <requestId>") {
+                                        UIPasteboard.general.string = "openclaw devices approve <requestId>"
+                                    }
+                                }
+
+                                Text("After approval, the iOS node should reconnect automatically.")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        Button("Restart Discovery") {
+                            self.gatewayController.restartDiscovery()
+                        }
+                        .disabled(self.connectingGatewayID != nil)
+
                         DisclosureGroup("Advanced") {
                         if self.appModel.gatewayServerName == nil {
                             LabeledContent("Discovery", value: self.gatewayController.discoveryStatusText)
@@ -158,6 +204,17 @@ struct SettingsTab: View {
                             .keyboardType(.numberPad)
 
                         Toggle("Use TLS", isOn: self.$manualGatewayTLS)
+
+                        TextField("Discovery Domain (optional)", text: self.$discoveryDomain)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .onChange(of: self.discoveryDomain) { _, _ in
+                                self.scheduleDiscoveryRestart()
+                            }
+
+                        Text("For tailnet / unicast DNS-SD (example: openclaw.internal.).")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
 
                         Button {
                             Task { await self.connectManual() }
@@ -291,6 +348,34 @@ struct SettingsTab: View {
                         LabeledContent("Model", value: self.modelIdentifier())
                     }
                 }
+
+                Section("Troubleshooting") {
+                    Button("Run Onboarding Again") {
+                        OnboardingStateStore.markIncomplete()
+                        self.onboardingRequestID += 1
+                        self.dismiss()
+                    }
+
+                    Button("Reset Onboarding", role: .destructive) {
+                        self.resetOnboardingConfirmPresented = true
+                    }
+
+                    Text("Clears node identity + pairing cache and keeps gateway auth credentials.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .confirmationDialog(
+                "Reset onboarding?",
+                isPresented: self.$resetOnboardingConfirmPresented,
+                titleVisibility: .visible)
+            {
+                Button("Reset Onboarding", role: .destructive) {
+                    self.resetOnboarding()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This will disconnect from the gateway and generate a new node instance ID.")
             }
             .navigationTitle("Settings")
             .toolbar {
@@ -315,6 +400,10 @@ struct SettingsTab: View {
                 // Keep setup front-and-center when disconnected; keep things compact once connected.
                 self.gatewayExpanded = !self.isGatewayConnected
                 self.selectedAgentPickerId = self.appModel.selectedAgentId ?? ""
+            }
+            .onDisappear {
+                self.discoveryRestartTask?.cancel()
+                self.discoveryRestartTask = nil
             }
             .onChange(of: self.selectedAgentPickerId) { _, newValue in
                 let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -787,6 +876,86 @@ struct SettingsTab: View {
         let padded = padding == 0 ? normalized : normalized + String(repeating: "=", count: 4 - padding)
         guard let data = Data(base64Encoded: padded) else { return nil }
         return String(data: data, encoding: .utf8)
+    }
+
+    private func scheduleDiscoveryRestart() {
+        self.discoveryRestartTask?.cancel()
+        self.discoveryRestartTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled else { return }
+            self.gatewayController.restartDiscovery()
+        }
+    }
+
+    private func resetOnboarding() {
+        let oldInstanceId = self.instanceId.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let currentParts = self.appModel.gatewayRemoteAddress.flatMap(Self.parseHostPort(from:))
+
+        let preservedToken =
+            GatewaySettingsStore.loadGatewayToken(instanceId: oldInstanceId) ?? self.gatewayToken
+        let preservedPassword =
+            GatewaySettingsStore.loadGatewayPassword(instanceId: oldInstanceId) ?? self.gatewayPassword
+
+        self.appModel.disconnectGateway()
+
+        DeviceAuthStore.reset()
+        DeviceIdentityStore.reset()
+
+        let freshInstanceId = UUID().uuidString
+        self.instanceId = freshInstanceId
+        GatewaySettingsStore.saveStableInstanceID(freshInstanceId)
+
+        self.gatewayToken = preservedToken
+        self.gatewayPassword = preservedPassword
+        let trimmedToken = preservedToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedToken.isEmpty {
+            GatewaySettingsStore.saveGatewayToken(trimmedToken, instanceId: freshInstanceId)
+        }
+        let trimmedPassword = preservedPassword.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedPassword.isEmpty {
+            GatewaySettingsStore.saveGatewayPassword(trimmedPassword, instanceId: freshInstanceId)
+        }
+
+        self.setupStatusText = "Onboarding reset"
+        self.gatewayController.restartDiscovery()
+
+        let defaults = UserDefaults.standard
+        let manualEnabled = defaults.bool(forKey: "gateway.manual.enabled")
+        let manualHost = defaults.string(forKey: "gateway.manual.host")?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let manualPort = defaults.integer(forKey: "gateway.manual.port")
+        let resolvedPort = manualPort > 0 ? manualPort : 18789
+        let manualTLS = defaults.bool(forKey: "gateway.manual.tls")
+
+        let fallback = GatewayConnectionController.loadLastConnection(defaults: defaults)
+
+        let host: String
+        let port: Int
+        let tls: Bool
+        if manualEnabled, !manualHost.isEmpty {
+            host = manualHost
+            port = resolvedPort
+            tls = manualTLS
+        } else if let fallback {
+            host = fallback.host
+            port = fallback.port
+            tls = fallback.useTLS
+        } else if let currentParts {
+            host = currentParts.host
+            port = currentParts.port
+            tls = manualTLS
+        } else {
+            self.gatewayController.allowAutoConnectAgain()
+            return
+        }
+
+        self.setupStatusText = "Reconnecting to \(host)…"
+        self.connectingGatewayID = "reset"
+        Task {
+            await self.gatewayController.connectManual(host: host, port: port, useTLS: tls)
+            await MainActor.run { self.connectingGatewayID = nil }
+        }
     }
 
     private func connectManual() async {
