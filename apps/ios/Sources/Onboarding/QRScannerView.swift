@@ -7,6 +7,10 @@ struct QRScannerView: UIViewControllerRepresentable {
     let onError: (String) -> Void
     let onDismiss: () -> Void
 
+    static var isSupported: Bool {
+        DataScannerViewController.isSupported && DataScannerViewController.isAvailable
+    }
+
     func makeUIViewController(context: Context) -> UIViewController {
         guard DataScannerViewController.isSupported else {
             context.coordinator.reportError("QR scanning is not supported on this device.")

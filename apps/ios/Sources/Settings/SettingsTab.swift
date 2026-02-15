@@ -32,6 +32,7 @@ struct SettingsTab: View {
     @AppStorage("gateway.manual.tls") private var manualGatewayTLS: Bool = true
     @AppStorage("gateway.discovery.debugLogs") private var discoveryDebugLogsEnabled: Bool = false
     @AppStorage("canvas.debugStatusEnabled") private var canvasDebugStatusEnabled: Bool = false
+    @AppStorage("onboarding.requestID") private var onboardingRequestID: Int = 0
     @State private var connectingGatewayID: String?
     @State private var localIPAddress: String?
     @State private var lastLocationModeRaw: String = OpenClawLocationMode.off.rawValue
@@ -203,6 +204,12 @@ struct SettingsTab: View {
                                 .autocorrectionDisabled()
 
                             SecureField("Gateway Password", text: self.$gatewayPassword)
+
+                            Button("Run Onboarding Again") {
+                                OnboardingStateStore.markIncomplete()
+                                self.onboardingRequestID += 1
+                                self.dismiss()
+                            }
 
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("Debug")

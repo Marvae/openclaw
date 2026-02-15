@@ -16,10 +16,14 @@ struct RootCanvas: View {
     @AppStorage("gateway.manual.enabled") private var manualGatewayEnabled: Bool = false
     @AppStorage("gateway.manual.host") private var manualGatewayHost: String = ""
     @AppStorage("onboarding.quickSetupDismissed") private var quickSetupDismissed: Bool = false
+    @AppStorage("onboarding.requestID") private var onboardingRequestID: Int = 0
     @State private var presentedSheet: PresentedSheet?
     @State private var voiceWakeToastText: String?
     @State private var toastDismissTask: Task<Void, Never>?
     @State private var didAutoOpenSettings: Bool = false
+    @State private var showOnboarding: Bool = false
+    @State private var onboardingAllowSkip: Bool = true
+    @State private var didEvaluateOnboarding: Bool = false
 
     private enum PresentedSheet: Identifiable {
         case settings
@@ -57,6 +61,13 @@ struct RootCanvas: View {
             }
         }
         .gatewayTrustPromptAlert()
+        .fullScreenCover(isPresented: self.$showOnboarding) {
+            OnboardingWizardView(
+                allowSkip: self.onboardingAllowSkip,
+                onClose: {
+                    self.showOnboarding = false
+                })
+        }
         .sheet(item: self.$presentedSheet) { sheet in
             switch sheet {
             case .settings:
@@ -73,6 +84,7 @@ struct RootCanvas: View {
         }
         .onAppear { self.updateIdleTimer() }
         .onAppear { self.maybeAutoOpenSettings() }
+        .onAppear { self.evaluateOnboardingPresentation(force: false) }
         .onChange(of: self.preventSleep) { _, _ in self.updateIdleTimer() }
         .onChange(of: self.scenePhase) { _, _ in self.updateIdleTimer() }
         .onAppear { self.maybeShowQuickSetup() }
@@ -86,8 +98,12 @@ struct RootCanvas: View {
             if newValue != nil {
                 self.onboardingComplete = true
                 self.hasConnectedOnce = true
+                self.showOnboarding = false
             }
             self.maybeAutoOpenSettings()
+        }
+        .onChange(of: self.onboardingRequestID) { _, _ in
+            self.evaluateOnboardingPresentation(force: true)
         }
         .onChange(of: self.voiceWake.lastTriggeredCommand) { _, newValue in
             guard let newValue else { return }
@@ -162,6 +178,19 @@ struct RootCanvas: View {
         guard self.shouldAutoOpenSettings() else { return }
         self.didAutoOpenSettings = true
         self.presentedSheet = .settings
+    }
+
+    private func evaluateOnboardingPresentation(force: Bool) {
+        if force {
+            self.onboardingAllowSkip = true
+            self.showOnboarding = true
+            return
+        }
+        guard !self.didEvaluateOnboarding else { return }
+        self.didEvaluateOnboarding = true
+        guard OnboardingStateStore.shouldPresentOnLaunch(appModel: self.appModel) else { return }
+        self.onboardingAllowSkip = false
+        self.showOnboarding = true
     }
 
     private func maybeShowQuickSetup() {
