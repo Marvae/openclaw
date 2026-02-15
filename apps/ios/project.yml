@@ -116,6 +116,7 @@ targets:
       - path: Tests
     dependencies:
       - target: OpenClaw
+      - package: OpenClawKit
       - package: Swabble
         product: SwabbleKit
       - sdk: AppIntents.framework
