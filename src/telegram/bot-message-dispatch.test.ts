@@ -268,11 +268,11 @@ describe("dispatchTelegramMessage draft streaming", () => {
       async ({ dispatcherOptions, replyOptions }) => {
         // First assistant message: partial text
         await replyOptions?.onPartialReply?.({ text: "First response" });
-        // New assistant message starts (e.g., after tool call + thinking)
+        // New assistant message starts (e.g., after tool call)
         await replyOptions?.onAssistantMessageStart?.();
         // Second assistant message: new text
-        await replyOptions?.onPartialReply?.({ text: "After thinking" });
-        await dispatcherOptions.deliver({ text: "After thinking" }, { kind: "final" });
+        await replyOptions?.onPartialReply?.({ text: "After tool call" });
+        await dispatcherOptions.deliver({ text: "After tool call" }, { kind: "final" });
         return { queuedFinal: true };
       },
     );
@@ -280,7 +280,7 @@ describe("dispatchTelegramMessage draft streaming", () => {
 
     await dispatchWithContext({ context: createContext(), streamMode: "block" });
 
-    // Should have called forceNewMessage when second assistant message started
+    // Should force new message when assistant message starts after previous output
     expect(draftStream.forceNewMessage).toHaveBeenCalled();
   });
 
@@ -352,5 +352,34 @@ describe("dispatchTelegramMessage draft streaming", () => {
 
     // No previous text output, so no forceNewMessage needed
     expect(draftStream.forceNewMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not edit preview message when final payload is an error", async () => {
+    const draftStream = createDraftStream(999);
+    createTelegramDraftStream.mockReturnValue(draftStream);
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(
+      async ({ dispatcherOptions, replyOptions }) => {
+        // Partial text output
+        await replyOptions?.onPartialReply?.({ text: "Let me check that file" });
+        // Error payload should not edit the preview message
+        await dispatcherOptions.deliver(
+          { text: "⚠️ 🛠️ Exec: cat /nonexistent failed: No such file", isError: true },
+          { kind: "final" },
+        );
+        return { queuedFinal: true };
+      },
+    );
+    deliverReplies.mockResolvedValue({ delivered: true });
+
+    await dispatchWithContext({ context: createContext(), streamMode: "block" });
+
+    // Should NOT edit preview message (which would overwrite the partial text)
+    expect(editMessageTelegram).not.toHaveBeenCalled();
+    // Should deliver via normal path as a new message
+    expect(deliverReplies).toHaveBeenCalledWith(
+      expect.objectContaining({
+        replies: [expect.objectContaining({ text: expect.stringContaining("⚠️") })],
+      }),
+    );
   });
 });
