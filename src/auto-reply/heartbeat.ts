@@ -152,6 +152,17 @@ export function stripHeartbeatToken(
   const strippedNormalized = stripTokenAtEdges(trimmedNormalized);
   const picked =
     strippedOriginal.didStrip && strippedOriginal.text ? strippedOriginal : strippedNormalized;
+  if (mode === "heartbeat") {
+    const baseText = picked.didStrip ? picked.text : trimmedNormalized;
+    const collapsed = baseText.replaceAll(HEARTBEAT_TOKEN, " ").replace(/\s+/g, " ").trim();
+    if (!collapsed) {
+      return { shouldSkip: true, text: "", didStrip: true };
+    }
+    if (collapsed.length <= maxAckChars) {
+      return { shouldSkip: true, text: "", didStrip: true };
+    }
+    return { shouldSkip: false, text: collapsed, didStrip: true };
+  }
   if (!picked.didStrip) {
     return { shouldSkip: false, text: trimmed, didStrip: false };
   }
@@ -161,11 +172,5 @@ export function stripHeartbeatToken(
   }
 
   const rest = picked.text.trim();
-  if (mode === "heartbeat") {
-    if (rest.length <= maxAckChars) {
-      return { shouldSkip: true, text: "", didStrip: true };
-    }
-  }
-
   return { shouldSkip: false, text: rest, didStrip: true };
 }

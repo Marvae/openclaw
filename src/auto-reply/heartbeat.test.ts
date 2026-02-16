@@ -80,9 +80,75 @@ describe("stripHeartbeatToken", () => {
     });
   });
 
+  it("treats token in the middle as ack for heartbeat mode", () => {
+    expect(
+      stripHeartbeatToken(`all good ${HEARTBEAT_TOKEN} thanks`, {
+        mode: "heartbeat",
+      }),
+    ).toEqual({
+      shouldSkip: true,
+      text: "",
+      didStrip: true,
+    });
+  });
+
+  it("keeps long content when token appears in the middle for heartbeat mode", () => {
+    const long = "A".repeat(DEFAULT_HEARTBEAT_ACK_MAX_CHARS + 1);
+    expect(
+      stripHeartbeatToken(`${long} ${HEARTBEAT_TOKEN} tail`, {
+        mode: "heartbeat",
+      }),
+    ).toEqual({
+      shouldSkip: false,
+      text: `${long} tail`,
+      didStrip: true,
+    });
+  });
+
+  it("strips edge and middle tokens in heartbeat mode", () => {
+    expect(
+      stripHeartbeatToken(`HEARTBEAT_OK hello ${HEARTBEAT_TOKEN} world`, {
+        mode: "heartbeat",
+      }),
+    ).toEqual({
+      shouldSkip: true,
+      text: "",
+      didStrip: true,
+    });
+    expect(
+      stripHeartbeatToken(`Hello ${HEARTBEAT_TOKEN} world HEARTBEAT_OK`, {
+        mode: "heartbeat",
+      }),
+    ).toEqual({
+      shouldSkip: true,
+      text: "",
+      didStrip: true,
+    });
+    expect(
+      stripHeartbeatToken(`${HEARTBEAT_TOKEN} ${HEARTBEAT_TOKEN} ${HEARTBEAT_TOKEN}`, {
+        mode: "heartbeat",
+      }),
+    ).toEqual({
+      shouldSkip: true,
+      text: "",
+      didStrip: true,
+    });
+  });
+
   it("strips HTML-wrapped heartbeat tokens", () => {
     expect(stripHeartbeatToken(`<b>${HEARTBEAT_TOKEN}</b>`, { mode: "heartbeat" })).toEqual({
       shouldSkip: true,
+      text: "",
+      didStrip: true,
+    });
+  });
+
+  it("strips HTML-wrapped token in the middle for heartbeat mode", () => {
+    expect(
+      stripHeartbeatToken(`hello <b>${HEARTBEAT_TOKEN}</b> world`, { mode: "heartbeat" }),
+    ).toEqual({
+      shouldSkip: true,
+      // "hello world" length < maxAckChars
       text: "",
       didStrip: true,
     });
