@@ -112,6 +112,7 @@ export const dispatchTelegramMessage = async ({
   const mediaLocalRoots = getAgentScopedMediaLocalRoots(cfg, route.agentId);
   let lastPartialText = "";
   let draftText = "";
+  let hasStreamedMessage = false;
   const updateDraftFromPartial = (text?: string) => {
     if (!draftStream || !text) {
       return;
@@ -119,6 +120,8 @@ export const dispatchTelegramMessage = async ({
     if (text === lastPartialText) {
       return;
     }
+    // Mark that we've received streaming content (for forceNewMessage decision).
+    hasStreamedMessage = true;
     if (streamMode === "partial") {
       // Some providers briefly emit a shorter prefix snapshot (for example
       // "Sure." -> "Sure" -> "Sure."). Keep the longer preview to avoid
@@ -375,6 +378,29 @@ export const dispatchTelegramMessage = async ({
         skillFilter,
         disableBlockStreaming,
         onPartialReply: draftStream ? (payload) => updateDraftFromPartial(payload.text) : undefined,
+        onAssistantMessageStart: draftStream
+          ? () => {
+              // When a new assistant message starts (e.g., after tool call or thinking),
+              // force a new Telegram message instead of editing the previous one.
+              if (hasStreamedMessage) {
+                draftStream.forceNewMessage();
+                lastPartialText = "";
+                draftText = "";
+                draftChunker?.reset();
+              }
+            }
+          : undefined,
+        onReasoningEnd: draftStream
+          ? () => {
+              // When a thinking block ends, force a new Telegram message for the next text output.
+              if (hasStreamedMessage) {
+                draftStream.forceNewMessage();
+                lastPartialText = "";
+                draftText = "";
+                draftChunker?.reset();
+              }
+            }
+          : undefined,
         onModelSelected,
       },
     }));
