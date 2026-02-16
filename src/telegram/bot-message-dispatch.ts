@@ -315,33 +315,33 @@ export const dispatchTelegramMessage = async ({
               finalText.length <= draftMaxChars &&
               !payload.isError;
             if (canFinalizeViaPreviewEdit) {
-                draftStream?.stop();
-                draftStoppedForPreviewEdit = true;
-                if (
-                  currentPreviewText &&
-                  currentPreviewText.startsWith(finalText) &&
-                  finalText.length < currentPreviewText.length
-                ) {
-                  // Ignore regressive final edits (e.g., "Okay." -> "Ok"), which
-                  // can appear transiently in some provider streams.
-                  return;
-                }
-                try {
-                  await editMessageTelegram(chatId, previewMessageId, finalText, {
-                    api: bot.api,
-                    cfg,
-                    accountId: route.accountId,
-                    linkPreview: telegramCfg.linkPreview,
-                    buttons: previewButtons,
-                  });
-                  finalizedViaPreviewMessage = true;
-                  deliveryState.delivered = true;
-                  return;
-                } catch (err) {
-                  logVerbose(
-                    `telegram: preview final edit failed; falling back to standard send (${String(err)})`,
-                  );
-                }
+              draftStream?.stop();
+              draftStoppedForPreviewEdit = true;
+              if (
+                currentPreviewText &&
+                currentPreviewText.startsWith(finalText) &&
+                finalText.length < currentPreviewText.length
+              ) {
+                // Ignore regressive final edits (e.g., "Okay." -> "Ok"), which
+                // can appear transiently in some provider streams.
+                return;
+              }
+              try {
+                await editMessageTelegram(chatId, previewMessageId, finalText, {
+                  api: bot.api,
+                  cfg,
+                  accountId: route.accountId,
+                  linkPreview: telegramCfg.linkPreview,
+                  buttons: previewButtons,
+                });
+                finalizedViaPreviewMessage = true;
+                deliveryState.delivered = true;
+                return;
+              } catch (err) {
+                logVerbose(
+                  `telegram: preview final edit failed; falling back to standard send (${String(err)})`,
+                );
+              }
             }
             if (
               !hasMedia &&
