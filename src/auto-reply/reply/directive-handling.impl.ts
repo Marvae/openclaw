@@ -317,7 +317,21 @@ export async function handleDirectiveOnly(
       directives.reasoningLevel !== prevReasoningLevel && directives.reasoningLevel !== undefined;
   }
   if (directives.hasPlanDirective && directives.planLevel) {
-    sessionEntry.planMode = directives.planLevel;
+    if (directives.planLevel === "on") {
+      if (sessionEntry.toolProfile && sessionEntry.toolProfile !== "plan") {
+        sessionEntry.previousToolProfile = sessionEntry.toolProfile;
+      }
+      sessionEntry.toolProfile = "plan";
+      sessionEntry.planMode = "on";
+    } else {
+      if (sessionEntry.previousToolProfile) {
+        sessionEntry.toolProfile = sessionEntry.previousToolProfile;
+      } else {
+        delete sessionEntry.toolProfile;
+      }
+      delete sessionEntry.previousToolProfile;
+      delete sessionEntry.planMode;
+    }
     planChanged = planChanged || directives.planLevel !== prevPlanLevel;
   }
   if (directives.hasElevatedDirective && directives.elevatedLevel) {
