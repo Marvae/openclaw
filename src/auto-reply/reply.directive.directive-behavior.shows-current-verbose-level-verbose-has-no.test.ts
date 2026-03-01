@@ -136,6 +136,10 @@ describe("directive behavior", () => {
       expect(reasoningText).toContain("Current reasoning level: off");
       expect(reasoningText).toContain("Options: on, off, stream.");
 
+      const planText = await runCommand(home, "/plan");
+      expect(planText).toContain("Current plan mode: off");
+      expect(planText).toContain("Options: on, off.");
+
       const elevatedText = replyText(await runElevatedCommand(home, "/elevated"));
       expect(elevatedText).toContain("Current elevated level: on");
       expect(elevatedText).toContain("Options: on, off, ask, full.");
@@ -158,6 +162,26 @@ describe("directive behavior", () => {
       expect(execText).toContain(
         "Options: host=sandbox|gateway|node, security=deny|allowlist|full, ask=off|on-miss|always, node=<id>.",
       );
+      expect(runEmbeddedPiAgent).not.toHaveBeenCalled();
+    });
+  });
+
+  it("persists /plan toggles across /status and /plan", async () => {
+    await withTempHome(async (home) => {
+      const storePath = sessionStorePath(home);
+
+      const onStatusText = await runCommand(home, "/plan on\n/status");
+      expect(onStatusText).toContain("Plan mode enabled (read-only analysis mode).");
+      expect(onStatusText).toContain("Plan: on");
+
+      const onLevelText = await runCommand(home, "/plan");
+      expect(onLevelText).toContain("Current plan mode: on");
+      expect(loadSessionStore(storePath)["agent:main:main"]?.planMode).toBe("on");
+
+      await runCommand(home, "/plan off");
+      const offStatusText = await runCommand(home, "/status");
+      expect(offStatusText).not.toContain("Plan: on");
+      expect(loadSessionStore(storePath)["agent:main:main"]?.planMode).toBe("off");
       expect(runEmbeddedPiAgent).not.toHaveBeenCalled();
     });
   });

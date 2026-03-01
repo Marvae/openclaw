@@ -22,10 +22,11 @@ import {
   formatDirectiveAck,
   formatElevatedRuntimeHint,
   formatElevatedUnavailableText,
+  formatPlanEvent,
   enqueueModeSwitchEvents,
   withOptions,
 } from "./directive-handling.shared.js";
-import type { ElevatedLevel, ReasoningLevel, ThinkLevel } from "./directives.js";
+import type { ElevatedLevel, PlanLevel, ReasoningLevel, ThinkLevel } from "./directives.js";
 
 function resolveExecDefaults(params: {
   cfg: OpenClawConfig;
@@ -80,6 +81,7 @@ export async function handleDirectiveOnly(
     currentThinkLevel,
     currentVerboseLevel,
     currentReasoningLevel,
+    currentPlanLevel,
     currentElevatedLevel,
   } = params;
   const activeAgentId = resolveSessionAgentId({
@@ -167,6 +169,17 @@ export async function handleDirectiveOnly(
     }
     return {
       text: `Unrecognized reasoning level "${directives.rawReasoningLevel}". Valid levels: on, off, stream.`,
+    };
+  }
+  if (directives.hasPlanDirective && !directives.planLevel) {
+    if (!directives.rawPlanLevel) {
+      const level = currentPlanLevel ?? "off";
+      return {
+        text: withOptions(`Current plan mode: ${level}.`, "on, off"),
+      };
+    }
+    return {
+      text: `Unrecognized plan mode "${directives.rawPlanLevel}". Valid modes: on, off.`,
     };
   }
   if (directives.hasElevatedDirective && !directives.elevatedLevel) {
@@ -274,6 +287,8 @@ export async function handleDirectiveOnly(
     (elevatedAllowed ? ("on" as ElevatedLevel) : ("off" as ElevatedLevel));
   const prevReasoningLevel =
     currentReasoningLevel ?? (sessionEntry.reasoningLevel as ReasoningLevel | undefined) ?? "off";
+  const prevPlanLevel =
+    currentPlanLevel ?? (sessionEntry.planMode as PlanLevel | undefined) ?? "off";
   let elevatedChanged =
     directives.hasElevatedDirective &&
     directives.elevatedLevel !== undefined &&
@@ -281,6 +296,7 @@ export async function handleDirectiveOnly(
     elevatedAllowed;
   let reasoningChanged =
     directives.hasReasoningDirective && directives.reasoningLevel !== undefined;
+  let planChanged = directives.hasPlanDirective && directives.planLevel !== undefined;
   if (directives.hasThinkDirective && directives.thinkLevel) {
     sessionEntry.thinkingLevel = directives.thinkLevel;
   }
@@ -299,6 +315,10 @@ export async function handleDirectiveOnly(
     }
     reasoningChanged =
       directives.reasoningLevel !== prevReasoningLevel && directives.reasoningLevel !== undefined;
+  }
+  if (directives.hasPlanDirective && directives.planLevel) {
+    sessionEntry.planMode = directives.planLevel;
+    planChanged = planChanged || directives.planLevel !== prevPlanLevel;
   }
   if (directives.hasElevatedDirective && directives.elevatedLevel) {
     // Unlike other toggles, elevated defaults can be "on".
@@ -370,6 +390,7 @@ export async function handleDirectiveOnly(
     sessionKey,
     elevatedChanged,
     reasoningChanged,
+    planChanged,
   });
 
   const parts: string[] = [];
@@ -397,6 +418,14 @@ export async function handleDirectiveOnly(
           ? formatDirectiveAck("Reasoning stream enabled (Telegram only).")
           : formatDirectiveAck("Reasoning visibility enabled."),
     );
+  }
+  if (directives.hasPlanDirective && directives.planLevel) {
+    parts.push(
+      directives.planLevel === "on"
+        ? formatDirectiveAck("Plan mode enabled (read-only analysis mode).")
+        : formatDirectiveAck("Plan mode disabled (mutating tools enabled)."),
+    );
+    parts.push(formatPlanEvent(directives.planLevel));
   }
   if (directives.hasElevatedDirective && directives.elevatedLevel) {
     parts.push(
