@@ -80,7 +80,7 @@ export async function persistInlineDirectives(params: {
     let reasoningChanged =
       directives.hasReasoningDirective && directives.reasoningLevel !== undefined;
     const prevPlanLevel = (sessionEntry.planMode as PlanLevel | undefined) ?? "off";
-    let planChanged = directives.hasPlanDirective && directives.planLevel !== undefined;
+    let planChanged = false;
     let updated = false;
 
     if (directives.hasThinkDirective && directives.thinkLevel) {
@@ -114,13 +114,13 @@ export async function persistInlineDirectives(params: {
       } else {
         if (sessionEntry.previousToolProfile) {
           sessionEntry.toolProfile = sessionEntry.previousToolProfile;
-        } else {
+        } else if (sessionEntry.toolProfile === "plan") {
           delete sessionEntry.toolProfile;
         }
         delete sessionEntry.previousToolProfile;
         delete sessionEntry.planMode;
       }
-      planChanged = planChanged || directives.planLevel !== prevPlanLevel;
+      planChanged = directives.planLevel !== prevPlanLevel;
       updated = true;
     }
     if (

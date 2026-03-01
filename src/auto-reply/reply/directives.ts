@@ -188,7 +188,7 @@ export function extractPlanDirective(body?: string): {
   if (!body) {
     return { cleaned: "", hasDirective: false };
   }
-  const extracted = extractLevelDirective(body, ["plan"], normalizePlanLevel);
+  const extracted = extractLevelDirective(body, ["plan", "p"], normalizePlanLevel);
   return {
     cleaned: extracted.cleaned,
     planLevel: extracted.level,

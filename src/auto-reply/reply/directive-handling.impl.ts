@@ -296,7 +296,7 @@ export async function handleDirectiveOnly(
     elevatedAllowed;
   let reasoningChanged =
     directives.hasReasoningDirective && directives.reasoningLevel !== undefined;
-  let planChanged = directives.hasPlanDirective && directives.planLevel !== undefined;
+  let planChanged = false;
   if (directives.hasThinkDirective && directives.thinkLevel) {
     sessionEntry.thinkingLevel = directives.thinkLevel;
   }
@@ -326,13 +326,13 @@ export async function handleDirectiveOnly(
     } else {
       if (sessionEntry.previousToolProfile) {
         sessionEntry.toolProfile = sessionEntry.previousToolProfile;
-      } else {
+      } else if (sessionEntry.toolProfile === "plan") {
         delete sessionEntry.toolProfile;
       }
       delete sessionEntry.previousToolProfile;
       delete sessionEntry.planMode;
     }
-    planChanged = planChanged || directives.planLevel !== prevPlanLevel;
+    planChanged = directives.planLevel !== prevPlanLevel;
   }
   if (directives.hasElevatedDirective && directives.elevatedLevel) {
     // Unlike other toggles, elevated defaults can be "on".

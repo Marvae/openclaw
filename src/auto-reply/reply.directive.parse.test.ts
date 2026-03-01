@@ -56,6 +56,12 @@ describe("directive parsing", () => {
     expect(res.planLevel).toBe("on");
   });
 
+  it("matches /p plan alias", () => {
+    const res = extractPlanDirective("/p on please");
+    expect(res.hasDirective).toBe(true);
+    expect(res.planLevel).toBe("on");
+  });
+
   it("matches elevated with leading space", () => {
     const res = extractElevatedDirective(" please /elevated on now");
     expect(res.hasDirective).toBe(true);
