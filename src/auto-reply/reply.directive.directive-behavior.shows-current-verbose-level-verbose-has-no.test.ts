@@ -214,6 +214,27 @@ describe("directive behavior", () => {
       expect(offStore["agent:main:main"]?.planMode).toBeUndefined();
     });
   });
+
+  it("does not clear non-plan toolProfile on idempotent /plan off", async () => {
+    await withTempHome(async (home) => {
+      const storePath = sessionStorePath(home);
+
+      await runCommand(home, "/status");
+      const store = loadSessionStore(storePath);
+      const entry = store["agent:main:main"];
+      expect(entry).toBeDefined();
+      if (entry) {
+        entry.toolProfile = "strict";
+      }
+      await saveSessionStore(storePath, store);
+
+      await runCommand(home, "/plan off");
+      const offStore = loadSessionStore(storePath);
+      expect(offStore["agent:main:main"]?.toolProfile).toBe("strict");
+      expect(offStore["agent:main:main"]?.previousToolProfile).toBeUndefined();
+      expect(offStore["agent:main:main"]?.planMode).toBeUndefined();
+    });
+  });
   it("persists elevated toggles across /status and /elevated", async () => {
     await withTempHome(async (home) => {
       const storePath = sessionStorePath(home);
