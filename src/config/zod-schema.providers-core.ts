@@ -1610,6 +1610,7 @@ export const MSTeamsConfigSchema = z
     textChunkLimit: z.number().int().positive().optional(),
     chunkMode: z.enum(["length", "newline"]).optional(),
     typingIndicator: z.boolean().optional(),
+    dmStreamStatus: z.union([z.boolean(), z.literal("native")]).optional(),
     blockStreaming: z.boolean().optional(),
     blockStreamingCoalesce: BlockStreamingCoalesceSchema.optional(),
     mediaAllowHosts: z.array(z.string()).optional(),

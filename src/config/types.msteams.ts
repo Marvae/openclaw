@@ -133,6 +133,8 @@ export type MSTeamsConfig = {
   chunkMode?: "length" | "newline";
   /** Send native Teams typing indicator before replies. Default: true for groups/channels; DMs use informative stream status. */
   typingIndicator?: boolean;
+  /** DM stream status mode. Default: true uses Copilot-style informative status; false or "native" uses native typing. */
+  dmStreamStatus?: boolean | "native";
   /** Enable progressive block-by-block message delivery instead of a single reply. */
   blockStreaming?: boolean;
   /** Merge streamed block replies before sending. */

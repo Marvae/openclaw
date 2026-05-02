@@ -51,6 +51,7 @@ export function createMSTeamsReplyDispatcher(params: {
   const conversationType = normalizeOptionalLowercaseString(
     params.conversationRef.conversation?.conversationType,
   );
+  const isPersonalConversation = conversationType === "personal";
   const isTypingSupported = conversationType === "personal" || conversationType === "groupchat";
 
   /**
@@ -142,17 +143,23 @@ export function createMSTeamsReplyDispatcher(params: {
     resolveChannelLimitMb: ({ cfg }) => cfg.channels?.msteams?.mediaMaxMb,
   });
   const feedbackLoopEnabled = params.cfg.channels?.msteams?.feedbackEnabled !== false;
+  const dmStreamStatusEnabled =
+    msteamsCfg?.dmStreamStatus === false || msteamsCfg?.dmStreamStatus === "native" ? false : true;
   const streamController = createTeamsReplyStreamController({
     conversationType,
     context: params.context,
     feedbackLoopEnabled,
     log: params.log,
+    streamStatusEnabled: dmStreamStatusEnabled,
   });
   // Wire the forward-declared gate used by sendTypingIndicator.
   streamActiveRef.current = () => streamController.isStreamActive();
 
   const blockStreamingEnabled =
-    typeof msteamsCfg?.blockStreaming === "boolean" ? msteamsCfg.blockStreaming : false;
+    typeof msteamsCfg?.blockStreaming === "boolean"
+      ? msteamsCfg.blockStreaming && (!isPersonalConversation || dmStreamStatusEnabled)
+      : false;
+  const suppressDmBlockStreaming = isPersonalConversation && !dmStreamStatusEnabled;
   const typingIndicatorEnabled =
     typeof msteamsCfg?.typingIndicator === "boolean" ? msteamsCfg.typingIndicator : true;
 
@@ -337,8 +344,11 @@ export function createMSTeamsReplyDispatcher(params: {
               streamController.onPartialReply(payload),
           }
         : {}),
-      disableBlockStreaming:
-        typeof msteamsCfg?.blockStreaming === "boolean" ? !msteamsCfg.blockStreaming : undefined,
+      disableBlockStreaming: suppressDmBlockStreaming
+        ? true
+        : typeof msteamsCfg?.blockStreaming === "boolean"
+          ? !blockStreamingEnabled
+          : undefined,
       onModelSelected,
     },
     markDispatchIdle,

@@ -6,6 +6,7 @@ Docs: https://docs.openclaw.ai
 
 ### Changes
 
+- MS Teams: add `dmStreamStatus` config option to disable Copilot-style informative stream status in DMs, falling back to native typing indicator with single final message delivery. When disabled, block streaming is also suppressed regardless of global settings. Fixes #71049. Thanks @Marvae.
 - Gateway/startup: skip plugin-backed auth-profile overlays during startup secrets preflight, reducing gateway readiness latency while keeping reload and OAuth recovery paths overlay-capable. (#68327) Thanks @JIRBOY.
 
 ### Fixes

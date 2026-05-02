@@ -200,6 +200,62 @@ describe("createMSTeamsReplyDispatcher", () => {
     expect(typingCallbacks.onReplyStart).not.toHaveBeenCalled();
   });
 
+  it("uses native typing and one-shot final delivery in DMs when dmStreamStatus is native", async () => {
+    const dispatcher = createDispatcher("personal", { dmStreamStatus: "native" });
+    const options = createReplyDispatcherWithTypingMock.mock.calls[0]?.[0];
+
+    await options.onReplyStart?.();
+    dispatcher.replyOptions.onPartialReply?.({ text: "partial response" });
+
+    expect(streamInstances).toHaveLength(0);
+    expect(typingCallbacks.onReplyStart).toHaveBeenCalledTimes(1);
+    expect(dispatcher.replyOptions.onPartialReply).toBeUndefined();
+  });
+
+  it("disables informative DM stream status when dmStreamStatus=false", async () => {
+    createDispatcher("personal", { dmStreamStatus: false });
+    const options = createReplyDispatcherWithTypingMock.mock.calls[0]?.[0];
+
+    await options.onReplyStart?.();
+
+    expect(streamInstances).toHaveLength(0);
+    expect(typingCallbacks.onReplyStart).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not flush DM messages progressively when dmStreamStatus disables streaming", async () => {
+    renderReplyPayloadsToMessagesMock.mockReturnValue([{ content: "hello" }] as never);
+    sendMSTeamsMessagesMock.mockResolvedValue(["id-1"] as never);
+
+    const dispatcher = createDispatcher("personal", {
+      blockStreaming: true,
+      dmStreamStatus: false,
+    });
+    const options = createReplyDispatcherWithTypingMock.mock.calls[0]?.[0];
+
+    await options.deliver({ text: "block content" });
+    expect(sendMSTeamsMessagesMock).not.toHaveBeenCalled();
+
+    await dispatcher.markDispatchIdle();
+    expect(sendMSTeamsMessagesMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks the reply pipeline for final-only delivery when dmStreamStatus disables streaming", () => {
+    const dispatcher = createDispatcher("personal", {
+      blockStreaming: true,
+      dmStreamStatus: false,
+    });
+
+    expect(dispatcher.replyOptions.disableBlockStreaming).toBe(true);
+  });
+
+  it("suppresses inherited block streaming when dmStreamStatus disables DM streaming", () => {
+    const dispatcher = createDispatcher("personal", {
+      dmStreamStatus: false,
+    });
+
+    expect(dispatcher.replyOptions.disableBlockStreaming).toBe(true);
+  });
+
   it("passes a longer keepalive TTL so the loop survives long tool chains", () => {
     createDispatcher("personal");
 

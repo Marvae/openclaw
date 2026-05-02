@@ -30,17 +30,19 @@ export function createTeamsReplyStreamController(params: {
   feedbackLoopEnabled: boolean;
   log: MSTeamsMonitorLogger;
   random?: () => number;
+  streamStatusEnabled?: boolean;
 }) {
   const isPersonal = normalizeOptionalLowercaseString(params.conversationType) === "personal";
-  const stream = isPersonal
-    ? new TeamsHttpStream({
-        sendActivity: (activity) => params.context.sendActivity(activity),
-        feedbackLoopEnabled: params.feedbackLoopEnabled,
-        onError: (err) => {
-          params.log.debug?.(`stream error: ${formatUnknownError(err)}`);
-        },
-      })
-    : undefined;
+  const stream =
+    isPersonal && params.streamStatusEnabled !== false
+      ? new TeamsHttpStream({
+          sendActivity: (activity) => params.context.sendActivity(activity),
+          feedbackLoopEnabled: params.feedbackLoopEnabled,
+          onError: (err) => {
+            params.log.debug?.(`stream error: ${formatUnknownError(err)}`);
+          },
+        })
+      : undefined;
 
   let streamReceivedTokens = false;
   let informativeUpdateSent = false;

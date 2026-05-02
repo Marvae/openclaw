@@ -8078,6 +8078,17 @@ export const GENERATED_BUNDLED_CHANNEL_CONFIG_METADATA = [
         typingIndicator: {
           type: "boolean",
         },
+        dmStreamStatus: {
+          anyOf: [
+            {
+              type: "boolean",
+            },
+            {
+              type: "string",
+              const: "native",
+            },
+          ],
+        },
         blockStreaming: {
           type: "boolean",
         },

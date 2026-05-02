@@ -58,4 +58,25 @@ describe("MSTeamsConfigSchema blockStreaming", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("accepts dmStreamStatus modes", () => {
+    for (const dmStreamStatus of [true, false, "native"] as const) {
+      const result = MSTeamsConfigSchema.safeParse({
+        ...baseConfig,
+        dmStreamStatus,
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.dmStreamStatus).toBe(dmStreamStatus);
+      }
+    }
+  });
+
+  it("rejects unsupported dmStreamStatus strings", () => {
+    const result = MSTeamsConfigSchema.safeParse({
+      ...baseConfig,
+      dmStreamStatus: "copilot",
+    });
+    expect(result.success).toBe(false);
+  });
 });

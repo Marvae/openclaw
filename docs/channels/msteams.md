@@ -688,6 +688,7 @@ Key settings (see `/gateway/configuration` for shared channel patterns):
 - `channels.msteams.dangerouslyAllowNameMatching`: break-glass toggle to re-enable mutable UPN/display-name matching and direct team/channel name routing.
 - `channels.msteams.textChunkLimit`: outbound text chunk size.
 - `channels.msteams.chunkMode`: `length` (default) or `newline` to split on blank lines (paragraph boundaries) before length chunking.
+- `channels.msteams.dmStreamStatus`: DM stream status mode. Default `true` uses Copilot-style informative stream status; set `false` or `"native"` to use the native typing indicator and send only the final reply. In personal chats, this also suppresses block streaming even when `channels.msteams.blockStreaming` or the global block-streaming default is enabled.
 - `channels.msteams.mediaAllowHosts`: allowlist for inbound attachment hosts (defaults to Microsoft/Teams domains).
 - `channels.msteams.mediaAuthAllowHosts`: allowlist for attaching Authorization headers on media retries (defaults to Graph + Bot Framework hosts).
 - `channels.msteams.requireMention`: require @mention in channels/groups (default true).
